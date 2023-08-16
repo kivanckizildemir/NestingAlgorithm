@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.33214.272
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nesting", "Nesting.csproj", "{507C84BD-68BE-4713-93E8-12FC10F52DFD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{507C84BD-68BE-4713-93E8-12FC10F52DFD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{507C84BD-68BE-4713-93E8-12FC10F52DFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{507C84BD-68BE-4713-93E8-12FC10F52DFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{507C84BD-68BE-4713-93E8-12FC10F52DFD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2D30F468-410E-4A28-AEB9-09A1E3200FEF}
+	EndGlobalSection
+EndGlobal

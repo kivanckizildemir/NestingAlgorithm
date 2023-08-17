@@ -147,12 +147,7 @@ public class GeneticNesting
     {
         Console.WriteLine("Starting nesting...");
 
-
-
         ConcurrentBag<Chromosome> population = new ConcurrentBag<Chromosome>();
-
-
-
         Parallel.For(0, PopulationSize, i =>
         {
             Chromosome chromosome = new Chromosome();
@@ -169,11 +164,7 @@ public class GeneticNesting
             population.Add(chromosome);
         });
 
-
-
         ParallelCalculateFitness(population);
-
-
 
         for (int generation = 0; generation < Generations; generation++)
         {
@@ -192,18 +183,12 @@ public class GeneticNesting
                 while (parent1 == parent2)
                     parent2 = SelectParent(sortedPopulation);
 
-
-
                 Chromosome child = Crossover(parent1, parent2);
                 Mutate(child);
-
-
 
                 child.Fitness = CalculateFitness(child);
                 newPopulation.Add(child);
             });
-
-
 
             population = newPopulation;
         }
@@ -250,7 +235,7 @@ public class PlywoodNesting
                 result = openFileDialog.ShowDialog();
                 if (result == DialogResult.OK)
                 {
-                    allSelectedFiles.AddRange(openFileDialog.FileNames);
+                    allSelectedFiles.AddRange(openFileDialog.SafeFileNames);
                     MessageBox.Show("Add more files or cancel to proceed with selected files.");
                 }
             } while (result != DialogResult.Cancel);
@@ -263,18 +248,12 @@ public class PlywoodNesting
         {
             allParts.AddRange(GetPartsFromAssembly(inventorApp, fileName));
         }
+
         List<PartDocument> processedParts = new List<PartDocument>();
         foreach (var part in allParts)
         {
             string partName = part.DisplayName;
-
-
-
             string userInput = Interaction.InputBox($"Enter the multiplier for part '{partName}':", "Part Multiplier", "1");
-
-
-
-
             if (int.TryParse(userInput, out int multiplier))
             {
                 for (int i = 0; i < multiplier; i++)
@@ -287,26 +266,54 @@ public class PlywoodNesting
                 processedParts.Add(part);
             }
         }
+        // Group parts by both material and thickness
+        var partsByMaterialAndThickness = processedParts.GroupBy(p => new
+        {
+            Material = GetMaterialName(p),
+            Thickness = p.ComponentDefinition.Parameters["Thickness"].Value
+        }).ToDictionary(group => group.Key, group => group.ToList());
+        
+        foreach (var materialAndThickness in partsByMaterialAndThickness.Keys)
+        {
+            var partsForMaterialAndThickness = partsByMaterialAndThickness[materialAndThickness];
+            ProcessPartsForNesting(inventorApp, partsForMaterialAndThickness);
+            
+        }
 
-
-
-        ProcessPartsForNesting(inventorApp, processedParts);
+    }
+    private string GetMaterialName(PartDocument part)
+    {
+        // Code to retrieve material name from the part.
+        // This is a placeholder, adjust according to your API.
+        return part.ActiveMaterial.Name;
     }
     private List<PartDocument> GetPartsFromAssembly(Inventor.Application inventorApp, string fileName)
     {
-        AssemblyDocument asmDoc = inventorApp.Documents.Open(fileName, true) as AssemblyDocument;
+        string file = fileName;
+        file = file.Replace(".iam", "");
+        string filePath = @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\" + file + @"\Model Files\" + file + ".iam";
+
+
+        inventorApp.Documents.CloseAll();
+        string ipjPath = @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\" + file + @"\Model Files\Model2.ipj";
+        try
+        {
+            inventorApp.Documents.CloseAll();
+            inventorApp.DesignProjectManager.DesignProjects.AddExisting(ipjPath);
+            DesignProject designProject = inventorApp.DesignProjectManager.DesignProjects.ItemByName[ipjPath];
+            designProject.Activate();
+        }
+        catch { }
+
+        AssemblyDocument asmDoc = inventorApp.Documents.Open(filePath, true) as AssemblyDocument;
+
         if (asmDoc == null)
         {
-            throw new Exception($"Failed to open assembly document: {fileName}");
+            throw new Exception($"Failed to open assembly document: {filePath}");
         }
-
-
-
         AssemblyComponentDefinition assemblyDef = asmDoc.ComponentDefinition;
         ComponentOccurrences occurrences = assemblyDef.Occurrences;
-
-
-
+        
         List<PartDocument> parts = new List<PartDocument>();
 
 
@@ -339,45 +346,54 @@ public class PlywoodNesting
         GeneticNesting nesting = new GeneticNesting(inventorApp, properties);
         var bestSolution = nesting.ExecuteNesting(parts);
 
-        PartDocument currentSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight);
-        List<PartDocument> sheets = new List<PartDocument> { currentSheet };
+        List<PartDocument> sheets = new List<PartDocument>();
+        List<List<(double x, double y, double width, double height)>> placementsForEachSheet = new List<List<(double, double, double, double)>>();
 
-        Dictionary<PartDocument, List<(double x, double y, double width, double height)>> placedPartsBySheet = new Dictionary<PartDocument, List<(double, double, double, double)>> { { currentSheet, new List<(double, double, double, double)>() } };
-
-        // Using parts directly from bestSolution without sorting
-        var orderedParts = bestSolution.Genes.ToList();
-
-        foreach (var part in orderedParts)
+        foreach (var part in bestSolution.Genes)
         {
             Box partBox = part.ComponentDefinition.RangeBox;
             double partWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
             double partHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
-
+            string partMaterial = part.ComponentDefinition.Material.Name;
+            double partThickness = part.ComponentDefinition.Parameters["Thickness"].Value;
             bool partPlaced = false;
 
-            foreach (var sheet in sheets)
+            for (int i = 0; i < sheets.Count; i++)
             {
-                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[sheet], properties.OffsetFromBoundary);
-                if (position.HasValue)
+                var sheet = sheets[i];
+                //double sheetThickness = sheet.ComponentDefinition.Parameters["Thickness"].Value;
+                //double panelThickness = part.ComponentDefinition.Parameters["Thickness"].Value;
+                if (sheet.ComponentDefinition.Material.Name == partMaterial) // Check if the sheet material matches the part's material  // && sheet.ComponentDefinition.Parameters["Thickness"].Value == partThickness  
                 {
-                    placedPartsBySheet[sheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
-                    PlacePartOnSheet(inventorApp, sheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
-                    partPlaced = true;
-                    break;
+                    //double thicknessValue = sheet.ComponentDefinition.Parameters["PanelThickness"].Value;
+                    //MessageBox.Show(thicknessValue.ToString());
+                    var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placementsForEachSheet[i], properties.OffsetFromBoundary);
+                    if (position.HasValue)
+                    {
+                        placementsForEachSheet[i].Add((position.Value.x, position.Value.y, partWidth, partHeight));
+                        PlacePartOnSheet(inventorApp, sheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
+                        partPlaced = true;
+                        break;
+                    }
                 }
             }
 
             if (!partPlaced)
             {
-                currentSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight);
-                sheets.Add(currentSheet);
-                placedPartsBySheet[currentSheet] = new List<(double, double, double, double)>();
-                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[currentSheet], properties.OffsetFromBoundary);
-                placedPartsBySheet[currentSheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
-                PlacePartOnSheet(inventorApp, currentSheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
+                // Create a new sheet with the part's material
+                PartDocument newSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight, partMaterial, partThickness);
+                //PartDocument newSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight, partMaterial);
+                sheets.Add(newSheet);
+                var newPlacementsList = new List<(double, double, double, double)>();
+                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, newPlacementsList, properties.OffsetFromBoundary);
+                newPlacementsList.Add((position.Value.x, position.Value.y, partWidth, partHeight));
+                placementsForEachSheet.Add(newPlacementsList);
+                PlacePartOnSheet(inventorApp, newSheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
+
             }
         }
     }
+
 
 
 
@@ -410,47 +426,64 @@ public class PlywoodNesting
         return null;  // No conflict found
     }
 
-
-
-
-
-    private PartDocument CreateNewSheet(Inventor.Application inventorApp, double width, double height)
+    private PartDocument CreateNewSheet(Inventor.Application inventorApp, double width, double height, string material, double thickness)
     {
         PartDocument sheet = inventorApp.Documents.Add(DocumentTypeEnum.kPartDocumentObject) as PartDocument;
         sheet.SubType = "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}";  // Set the subtype ID for sheet metal parts.
 
+        //MessageBox.Show(thickness.ToString());
 
-
+        // Continue with sketches and features
         PlanarSketch sketch = sheet.ComponentDefinition.Sketches.Add(sheet.ComponentDefinition.WorkPlanes[3]);
-        // metal features collection.
-
-
-
         SheetMetalFeatures oSheetMetalFeatures = (SheetMetalFeatures)sheet.ComponentDefinition.Features;
         sketch.SketchLines.AddAsTwoPointRectangle(
             inventorApp.TransientGeometry.CreatePoint2d(0, 0),
             inventorApp.TransientGeometry.CreatePoint2d(width, height)
         );
 
-
-
         Profile profile = sketch.Profiles.AddForSolid();
-
-
 
         // Use Face feature in +Z direction
         FaceFeatureDefinition faceFeatureDef = oSheetMetalFeatures.FaceFeatures.CreateFaceFeatureDefinition(profile);
         faceFeatureDef.Direction = PartFeatureExtentDirectionEnum.kPositiveExtentDirection;
 
-
-
         oSheetMetalFeatures.FaceFeatures.Add(faceFeatureDef);
 
+        // Adapted from VBA
+        SheetMetalComponentDefinition oSheetMetalCompDef = sheet.ComponentDefinition as SheetMetalComponentDefinition;
+        oSheetMetalCompDef.UseSheetMetalStyleThickness = false;
 
+        Parameter oThicknessParam = oSheetMetalCompDef.Thickness;
+        oThicknessParam.Value = thickness; // We directly set the desired thickness here
+
+        // Set Material
+        if (sheet.Materials.Cast<Material>().Any(m => m.Name == material))
+        {
+            Material materialToAssign = sheet.Materials[material];
+            if (materialToAssign != null)
+            {
+                sheet.ComponentDefinition.Material = materialToAssign;
+            }
+            else
+            {
+                // Handle the case where the material is not found. 
+                Console.WriteLine($"Material {material} not found.");
+            }
+        }
+        else
+        {
+            // Handle the situation where the material doesn't exist
+            Console.WriteLine($"Material {material} not found.");
+        }
 
         inventorApp.ActiveView.Fit(true);
         return sheet;
     }
+
+
+
+
+
 
 
 

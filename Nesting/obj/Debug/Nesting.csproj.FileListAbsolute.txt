@@ -7,3 +7,12 @@ C:\Users\pc\source\repos\Nesting\obj\Debug\Nesting.csproj.GenerateResource.cache
 C:\Users\pc\source\repos\Nesting\obj\Debug\Nesting.csproj.CoreCompileInputs.cache
 C:\Users\pc\source\repos\Nesting\obj\Debug\Nesting.exe
 C:\Users\pc\source\repos\Nesting\obj\Debug\Nesting.pdb
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\bin\Debug\Nesting.exe.config
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\bin\Debug\Nesting.exe
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\bin\Debug\Nesting.pdb
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.csproj.AssemblyReference.cache
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.Properties.Resources.resources
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.csproj.GenerateResource.cache
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.csproj.CoreCompileInputs.cache
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.exe
+C:\Users\kivan\Documents\GitHub\NestingAlgorithm\Nesting\obj\Debug\Nesting.pdb

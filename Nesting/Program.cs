@@ -33,13 +33,12 @@ public class Chromosome
 public class GeneticNesting
 {
     private const int PopulationSize = 10;
-    private const int Generations = 5;
+    private const int Generations = 20;
     private const double MutationRate = 0.05;
-    private const int ElitismCount = 5;
+    private const int ElitismCount = 1;
     private Inventor.Application InventorApplication;
     private CNCRouterProperties RouterProperties;
     private Random rand = new Random();
-
 
 
     public GeneticNesting(Inventor.Application inventorApp, CNCRouterProperties routerProperties)
@@ -55,18 +54,31 @@ public class GeneticNesting
         double wastedSpace = 0;
         double totalArea = RouterProperties.SheetWidth * RouterProperties.SheetHeight;
 
-
-
-        foreach (var part in chromosome.Genes)
+        for (int i = 0; i < chromosome.Genes.Count; i++)
         {
-            double partArea = (part.ComponentDefinition.RangeBox.MaxPoint.X - part.ComponentDefinition.RangeBox.MinPoint.X) * (part.ComponentDefinition.RangeBox.MaxPoint.Y - part.ComponentDefinition.RangeBox.MinPoint.Y);
+            PartDocument part = chromosome.Genes[i];
+            double width, height;
+
+            if (chromosome.Rotations[i])
+            {
+                // If rotated
+                width = part.ComponentDefinition.RangeBox.MaxPoint.Y - part.ComponentDefinition.RangeBox.MinPoint.Y;
+                height = part.ComponentDefinition.RangeBox.MaxPoint.X - part.ComponentDefinition.RangeBox.MinPoint.X;
+            }
+            else
+            {
+                // If not rotated
+                width = part.ComponentDefinition.RangeBox.MaxPoint.X - part.ComponentDefinition.RangeBox.MinPoint.X;
+                height = part.ComponentDefinition.RangeBox.MaxPoint.Y - part.ComponentDefinition.RangeBox.MinPoint.Y;
+            }
+
+            double partArea = width * height;
             wastedSpace += totalArea - partArea;
         }
 
-
-
         return 1 / wastedSpace;
     }
+
 
 
 
@@ -203,8 +215,6 @@ public class GeneticNesting
 
 }
 
-
-
 public class PlywoodNesting
 {
     private List<PartDocument> sheets = new List<PartDocument>();
@@ -326,122 +336,81 @@ public class PlywoodNesting
             SheetHeight = 120
         };
 
-
-
         GeneticNesting nesting = new GeneticNesting(inventorApp, properties);
         var bestSolution = nesting.ExecuteNesting(parts);
 
-
-
         PartDocument currentSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight);
-        sheets.Add(currentSheet);
-        double currentY = properties.OffsetFromBoundary;
-        ;
-        double maxYInCurrentRow = 0;
+        List<PartDocument> sheets = new List<PartDocument> { currentSheet };
 
+        Dictionary<PartDocument, List<(double x, double y, double width, double height)>> placedPartsBySheet = new Dictionary<PartDocument, List<(double, double, double, double)>> { { currentSheet, new List<(double, double, double, double)>() } };
 
+        // Using parts directly from bestSolution without sorting
+        var orderedParts = bestSolution.Genes.ToList();
 
-        List<(double x, double y, double width, double height)> placedParts = new List<(double, double, double, double)>();
-
-
-
-        // Sort parts by their area in descending order
-        var sortedParts = bestSolution.Genes.OrderByDescending(part =>
+        foreach (var part in orderedParts)
         {
             Box partBox = part.ComponentDefinition.RangeBox;
-            double width = partBox.MaxPoint.X - partBox.MinPoint.X;
-            double height = partBox.MaxPoint.Y - partBox.MinPoint.Y;
-            return width * height;
-        }).ToList();
+            double partWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
+            double partHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
 
+            bool partPlaced = false;
 
-
-        foreach (var part in sortedParts)
-        {
-            bool rotate = bestSolution.Rotations[bestSolution.Genes.IndexOf(part)];
-
-
-
-            Box partBox = part.ComponentDefinition.RangeBox;
-            double originalPartWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
-            double originalPartHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
-
-
-
-            double adjustedPartWidth = rotate ? originalPartHeight : originalPartWidth;
-            double adjustedPartHeight = rotate ? originalPartWidth : originalPartHeight;
-
-
-
-            double bestX = FindBestXForPart(currentY, adjustedPartWidth, adjustedPartHeight, properties.SheetWidth, placedParts, properties.OffsetFromBoundary);
-
-
-
-            while (bestX == -1 || currentY + adjustedPartHeight + properties.OffsetFromBoundary > properties.SheetHeight)
+            foreach (var sheet in sheets)
             {
-                if (bestX == -1)
+                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[sheet], properties.OffsetFromBoundary);
+                if (position.HasValue)
                 {
-                    currentY += maxYInCurrentRow + properties.OffsetFromBoundary;
-                    maxYInCurrentRow = 0;
-                    bestX = FindBestXForPart(currentY, adjustedPartWidth, adjustedPartHeight, properties.SheetWidth, placedParts, properties.OffsetFromBoundary);
-                }
-
-
-
-                if (currentY + adjustedPartHeight + properties.OffsetFromBoundary > properties.SheetHeight)
-                {
-                    currentSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight);
-                    sheets.Add(currentSheet);
-                    currentY = properties.OffsetFromBoundary;  // Start with an offset on the new sheet
-                    placedParts.Clear();
-                    bestX = FindBestXForPart(currentY, adjustedPartWidth, adjustedPartHeight, properties.SheetWidth, placedParts, properties.OffsetFromBoundary);
+                    placedPartsBySheet[sheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
+                    PlacePartOnSheet(inventorApp, sheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
+                    partPlaced = true;
+                    break;
                 }
             }
 
-
-
-            placedParts.Add((bestX, currentY, adjustedPartWidth, adjustedPartHeight));
-            maxYInCurrentRow = Math.Max(maxYInCurrentRow, adjustedPartHeight);
-
-
-
-            PlacePartOnSheet(inventorApp, currentSheet, part, bestX + adjustedPartWidth / 2, currentY + adjustedPartHeight / 2, rotate);
+            if (!partPlaced)
+            {
+                currentSheet = CreateNewSheet(inventorApp, properties.SheetWidth, properties.SheetHeight);
+                sheets.Add(currentSheet);
+                placedPartsBySheet[currentSheet] = new List<(double, double, double, double)>();
+                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[currentSheet], properties.OffsetFromBoundary);
+                placedPartsBySheet[currentSheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
+                PlacePartOnSheet(inventorApp, currentSheet, part, position.Value.x + partWidth / 2, position.Value.y + partHeight / 2, false);
+            }
         }
-
-
-
-
-
     }
 
 
 
-    // New function to find the best X position for a part on the current row
-    private double FindBestXForPart(double currentY, double partWidth, double partHeight, double sheetWidth, List<(double x, double y, double width, double height)> placedParts, double offsetFromBoundary)
+    private (double x, double y)? FindBestPositionForPart(double partWidth, double partHeight, double sheetWidth, double sheetHeight, List<(double x, double y, double width, double height)> placedParts, double offsetFromBoundary)
     {
-        Console.WriteLine($"Finding best X position for part with width {partWidth} and height {partHeight}...");
-        double bestX = offsetFromBoundary;  // Start from the offset
-        while (PartOverlapsOtherParts(bestX, currentY, partWidth, partHeight, placedParts) || bestX + partWidth + offsetFromBoundary > sheetWidth)
+        double currentY = offsetFromBoundary;
+        while (currentY + partHeight <= sheetHeight)
         {
-            bestX += 1;
-            if (bestX + partWidth + offsetFromBoundary > sheetWidth)
+            double bestX = offsetFromBoundary;
+            while (bestX + partWidth <= sheetWidth)
             {
-                return -1;
+                var conflictingPart = FindConflictingPart(bestX, currentY, partWidth, partHeight, placedParts);
+                if (!conflictingPart.HasValue) return (bestX, currentY);
+                bestX = conflictingPart.Value.x + conflictingPart.Value.width + offsetFromBoundary;
             }
+            currentY += partHeight + offsetFromBoundary;
         }
-        return bestX;
+        return null;  // Doesn't fit on the current sheet
     }
-    private bool PartOverlapsOtherParts(double x, double y, double width, double height, List<(double x, double y, double width, double height)> placedParts)
+
+    private (double x, double y, double width, double height)? FindConflictingPart(double x, double y, double width, double height, List<(double x, double y, double width, double height)> placedParts)
     {
         foreach (var placedPart in placedParts)
         {
             if (x < placedPart.x + placedPart.width && x + width > placedPart.x && y < placedPart.y + placedPart.height && y + height > placedPart.y)
             {
-                return true;
+                return placedPart;
             }
         }
-        return false;
+        return null;  // No conflict found
     }
+
+
 
 
 
@@ -489,6 +458,7 @@ public class PlywoodNesting
 
     private void PlacePartOnSheet(Inventor.Application inventorApp, PartDocument sheet, PartDocument part, double midPosX, double midPosY, bool rotZ)
     {
+        sheet.Activate();
         // Derive the part into the sheet.
         DerivedPartUniformScaleDef oDerivedPartDef = sheet.ComponentDefinition.ReferenceComponents.DerivedPartComponents.CreateUniformScaleDef(part.FullFileName);
         oDerivedPartDef.ScaleFactor = 1;

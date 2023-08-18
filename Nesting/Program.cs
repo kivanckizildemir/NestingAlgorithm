@@ -130,9 +130,6 @@ public class GeneticNesting
     }
 
 
-
-
-
     private void ParallelCalculateFitness(ConcurrentBag<Chromosome> population)
     {
         Parallel.ForEach(population, chromosome =>
@@ -345,28 +342,36 @@ public class PlywoodNesting
 
         GeneticNesting nesting = new GeneticNesting(inventorApp, properties);
         var bestSolution = nesting.ExecuteNesting(parts);
-
+        
+        //if (bestSolution.Genes.Distinct().Count() != bestSolution.Genes.Count)
+        //{
+        //    throw new Exception("Duplicates detected in the genes.");
+        //}
         List<PartDocument> sheets = new List<PartDocument>();
         List<List<(double x, double y, double width, double height)>> placementsForEachSheet = new List<List<(double, double, double, double)>>();
 
+        
         foreach (var part in bestSolution.Genes)
         {
+           
+        
             Box partBox = part.ComponentDefinition.RangeBox;
             double partWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
             double partHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
             string partMaterial = part.ComponentDefinition.Material.Name;
             double partThickness = part.ComponentDefinition.Parameters["Thickness"].Value;
             bool partPlaced = false;
-
+            foreach (WorkPoint oPoint in part.ComponentDefinition.WorkPoints)
+            {
+                oPoint.Visible = false; // To hide the work point
+            }
             for (int i = 0; i < sheets.Count; i++)
             {
                 var sheet = sheets[i];
-                //double sheetThickness = sheet.ComponentDefinition.Parameters["Thickness"].Value;
-                //double panelThickness = part.ComponentDefinition.Parameters["Thickness"].Value;
-                if (sheet.ComponentDefinition.Material.Name == partMaterial) // Check if the sheet material matches the part's material  // && sheet.ComponentDefinition.Parameters["Thickness"].Value == partThickness  
-                {
-                    //double thicknessValue = sheet.ComponentDefinition.Parameters["PanelThickness"].Value;
-                    //MessageBox.Show(thicknessValue.ToString());
+                const double THICKNESS_TOLERANCE = 0.001; 
+                double sheetThickness = sheet.ComponentDefinition.Parameters["Thickness"].Value;
+                if (sheet.ComponentDefinition.Material.Name == partMaterial && Math.Abs(sheetThickness - partThickness) <= THICKNESS_TOLERANCE) // Check if the sheet material matches the part's material
+                {              
                     var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placementsForEachSheet[i], properties.OffsetFromBoundary);
                     if (position.HasValue)
                     {
@@ -375,6 +380,7 @@ public class PlywoodNesting
                         partPlaced = true;
                         break;
                     }
+                    
                 }
             }
 
@@ -479,16 +485,6 @@ public class PlywoodNesting
         inventorApp.ActiveView.Fit(true);
         return sheet;
     }
-
-
-
-
-
-
-
-
-
-
     private void PlacePartOnSheet(Inventor.Application inventorApp, PartDocument sheet, PartDocument part, double midPosX, double midPosY, bool rotZ)
     {
         sheet.Activate();
@@ -496,58 +492,32 @@ public class PlywoodNesting
         DerivedPartUniformScaleDef oDerivedPartDef = sheet.ComponentDefinition.ReferenceComponents.DerivedPartComponents.CreateUniformScaleDef(part.FullFileName);
         oDerivedPartDef.ScaleFactor = 1;
         DerivedPartComponent oDerivedPart = sheet.ComponentDefinition.ReferenceComponents.DerivedPartComponents.Add(oDerivedPartDef as DerivedPartDefinition);
-
-
-
         Box partBox = part.ComponentDefinition.RangeBox;
         double partWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
         double partHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
         double expectedMinX = midPosX - partWidth / 2;
-
-
-
         // Target the last surface body, which is assumed to be the latest added one.
         SurfaceBody latestBody = sheet.ComponentDefinition.SurfaceBodies[sheet.ComponentDefinition.SurfaceBodies.Count];
-
-
-
         // Create an ObjectCollection and add the latest body to it.
         ObjectCollection objCollection = inventorApp.TransientObjects.CreateObjectCollection();
         objCollection.Add(latestBody);
-
-
-
         // Create a MoveFeatureDefinition.
         MoveDefinition oMoveDef = sheet.ComponentDefinition.Features.MoveFeatures.CreateMoveDefinition(objCollection);
-
-
-
         if (rotZ)
         {
             // Rotate about the Z-axis by 90 degrees (around the origin point).
             WorkAxis zAxis = sheet.ComponentDefinition.WorkAxes[3];
             RotateAboutLineMoveOperation oRotateAboutAxis = oMoveDef.AddRotateAboutAxis(zAxis, true, Math.PI / 2);
 
-
-
             // Update the model and pause for 1 second.
             inventorApp.ActiveView.Update();
             Thread.Sleep(1000);
         }
-
-
-
         // Set the free drag to translate the body to the mid point.
         FreeDragMoveOperation oFreeDrag = oMoveDef.AddFreeDrag(midPosX, midPosY, 0); // Z offset = 0
-
-
-
         // Update the model and pause for 1 second.
         inventorApp.ActiveView.Update();
         Thread.Sleep(1000);
-
-
-
         // Create the move feature using the defined transformation.
         MoveFeature oMoveFeature = sheet.ComponentDefinition.Features.MoveFeatures.Add(oMoveDef);
         SubtractDerivedFromSheet(inventorApp, sheet);

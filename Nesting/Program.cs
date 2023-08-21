@@ -8,18 +8,15 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.VisualBasic;
-
-
+using System.Text;
 
 public class CNCRouterProperties
 {
     public double ToolDiameter { get; set; }
     public double SheetWidth { get; set; }
-    public double SheetHeight { get; set; }
+    public double SheetHeight { get; set; } 
     public double OffsetFromBoundary { get; set; } = 1;  // default value set to 1
 }
-
-
 
 public class Chromosome
 {
@@ -28,11 +25,9 @@ public class Chromosome
     public double Fitness { get; set; }
 }
 
-
-
 public class GeneticNesting
 {
-    private const int PopulationSize = 10;
+    private const int PopulationSize = 20;
     private const int Generations = 20;
     private const double MutationRate = 0.05;
     private const int ElitismCount = 1;
@@ -75,24 +70,48 @@ public class GeneticNesting
             double partArea = width * height;
             wastedSpace += totalArea - partArea;
         }
-
         return 1 / wastedSpace;
     }
 
-
-
-
     private Chromosome Crossover(Chromosome parent1, Chromosome parent2)
     {
-        Chromosome child = new Chromosome
+        Chromosome child = new Chromosome();
+
+        int crossoverStart = rand.Next(parent1.Genes.Count);
+        int crossoverEnd = crossoverStart + rand.Next(parent1.Genes.Count - crossoverStart);
+
+        // Copying genes from parent1 to child
+        for (int i = crossoverStart; i < crossoverEnd; i++)
         {
-            Genes = parent1.Genes.Take(parent1.Genes.Count / 2).Concat(parent2.Genes.Skip(parent2.Genes.Count / 2)).ToList(),
-            Rotations = parent1.Rotations.Take(parent1.Rotations.Count / 2).Concat(parent2.Rotations.Skip(parent2.Rotations.Count / 2)).ToList()
-        };
+            child.Genes.Add(parent1.Genes[i]);
+            child.Rotations.Add(parent1.Rotations[i]);
+        }
+
+        // Calculate occurrences
+        Dictionary<PartDocument, int> childCounts = child.Genes.GroupBy(g => g).ToDictionary(g => g.Key, g => g.Count());
+        Dictionary<PartDocument, int> parent2Counts = parent2.Genes.GroupBy(g => g).ToDictionary(g => g.Key, g => g.Count());
+
+        // Taking genes from parent2 based on occurrences
+        for (int i = 0; i < parent2.Genes.Count; i++)
+        {
+            PartDocument currentGene = parent2.Genes[i];
+
+            // If child doesn't have the gene or has fewer occurrences of the gene than parent2, add it
+            if (!childCounts.ContainsKey(currentGene) || (childCounts[currentGene] < parent2Counts[currentGene]))
+            {
+                child.Genes.Add(currentGene);
+                child.Rotations.Add(parent2.Rotations[i]);
+
+                // Update the count in childCounts
+                if (!childCounts.ContainsKey(currentGene))
+                    childCounts[currentGene] = 1;
+                else
+                    childCounts[currentGene]++;
+            }
+        }
+
         return child;
     }
-
-
 
     private void Mutate(Chromosome chromosome)
     {
@@ -104,17 +123,11 @@ public class GeneticNesting
             }
         }
     }
-
-
-
     private Chromosome SelectParent(List<Chromosome> population)
     {
         double totalFitness = population.Sum(chromosome => chromosome.Fitness);
         double randomValue = rand.NextDouble() * totalFitness;
         double currentSum = 0;
-
-
-
         foreach (var chromosome in population)
         {
             currentSum += chromosome.Fitness;
@@ -123,8 +136,6 @@ public class GeneticNesting
                 return chromosome;
             }
         }
-
-
 
         return population.Last();
     }
@@ -137,14 +148,12 @@ public class GeneticNesting
             chromosome.Fitness = CalculateFitness(chromosome);
         });
     }
-
-
-
     public Chromosome ExecuteNesting(List<PartDocument> allParts)
     {
         Console.WriteLine("Starting nesting...");
 
-        ConcurrentBag<Chromosome> population = new ConcurrentBag<Chromosome>();
+        ConcurrentDictionary<string, Chromosome> populationDict = new ConcurrentDictionary<string, Chromosome>();
+
         Parallel.For(0, PopulationSize, i =>
         {
             Chromosome chromosome = new Chromosome();
@@ -158,21 +167,28 @@ public class GeneticNesting
             }
             chromosome.Genes = chromosome.Genes.OrderBy(x => rand.Next()).ToList();
             chromosome.Fitness = CalculateFitness(chromosome);
-            population.Add(chromosome);
+
+            string hash = ComputeChromosomeHash(chromosome);  // Assuming this method gives a unique string for each chromosome state.
+            populationDict.TryAdd(hash, chromosome);
         });
 
-        ParallelCalculateFitness(population);
+        var population = populationDict.Values.ToList();
+
+        ParallelCalculateFitness(new ConcurrentBag<Chromosome>(population));
 
         for (int generation = 0; generation < Generations; generation++)
         {
             Console.WriteLine($"Processing generation {generation + 1} of {Generations}...");
-            ConcurrentBag<Chromosome> newPopulation = new ConcurrentBag<Chromosome>();
-            // Add elites directly to the new population
+
+            ConcurrentDictionary<string, Chromosome> newPopulationDict = new ConcurrentDictionary<string, Chromosome>();
+
             var sortedPopulation = population.OrderByDescending(chromo => chromo.Fitness).ToList();
             for (int i = 0; i < ElitismCount; i++)
             {
-                newPopulation.Add(sortedPopulation[i]);
+                string hash = ComputeChromosomeHash(sortedPopulation[i]);
+                newPopulationDict.TryAdd(hash, sortedPopulation[i]);
             }
+
             Parallel.For(0, PopulationSize - ElitismCount, i =>  // Adjusted for elitism
             {
                 Chromosome parent1 = SelectParent(sortedPopulation);
@@ -184,16 +200,37 @@ public class GeneticNesting
                 Mutate(child);
 
                 child.Fitness = CalculateFitness(child);
-                newPopulation.Add(child);
+
+                string hash = ComputeChromosomeHash(child);
+                newPopulationDict.TryAdd(hash, child);
             });
 
-            population = newPopulation;
+            population = newPopulationDict.Values.ToList();
         }
         Console.WriteLine("Nesting complete!");
         return population.OrderByDescending(c => c.Fitness).FirstOrDefault();
     }
+    public string ComputeChromosomeHash(Chromosome chromosome)
+    {
+        StringBuilder hashBuilder = new StringBuilder();
 
+        for (int i = 0; i < chromosome.Genes.Count; i++)
+        {
+            // Assuming the genes (PartDocument) have a unique ID or name. If not, you should use some other unique attribute.
+            hashBuilder.Append(chromosome.Genes[i].DisplayName);
 
+            // Append rotation information
+            hashBuilder.Append(chromosome.Rotations[i] ? ":R" : ":N");
+
+            // If it's not the last gene, add a delimiter
+            if (i < chromosome.Genes.Count - 1)
+            {
+                hashBuilder.Append(",");
+            }
+        }
+
+        return hashBuilder.ToString();
+    }
 
 }
 
@@ -213,12 +250,7 @@ public class PlywoodNesting
             inventorApp = (Inventor.Application)Activator.CreateInstance(inventorAppType);
             inventorApp.Visible = true;
         }
-
-
-
         List<string> allSelectedFiles = new List<string>();
-
-
 
         using (OpenFileDialog openFileDialog = new OpenFileDialog())
         {
@@ -276,12 +308,32 @@ public class PlywoodNesting
             ProcessPartsForNesting(inventorApp, partsForMaterialAndThickness);
             
         }
+        //var activeDocument = inventorApp.ActiveDocument;
+        //ExportToDXF(inventorApp,activeDocument, @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\case2br\Model Files"); 
+    }
+    public void ExportToDXF(Inventor.Application inventorApp, Document oDocument, string savePath)
+    {
+        TranslatorAddIn DXFAddIn = (TranslatorAddIn)inventorApp.ApplicationAddIns.ItemById["{C24E3AC4-122E-11D5-8E91-0010B541CD80}"];
+        if (DXFAddIn == null) return;
 
+        TranslationContext oContext = inventorApp.TransientObjects.CreateTranslationContext();
+        NameValueMap oOptions = inventorApp.TransientObjects.CreateNameValueMap();
+        DataMedium oDataMedium = inventorApp.TransientObjects.CreateDataMedium();
+
+        if (DXFAddIn.HasSaveCopyAsOptions[oDocument, oContext, oOptions])
+        {
+            string iniFile = @"C:\Users\Public\Documents\Autodesk\Inventor 2024\Design Data\DWG-DXF\exportdxf.ini"; 
+            oOptions.Add("Export_Acad_IniFile", iniFile);
+        }
+
+
+        oDataMedium.FileName = savePath;
+
+        DXFAddIn.SaveCopyAs(oDocument, oContext, oOptions, oDataMedium);
     }
     private string GetMaterialName(PartDocument part)
     {
-        // Code to retrieve material name from the part.
-        // This is a placeholder, adjust according to your API.
+     
         return part.ActiveMaterial.Name;
     }
     private List<PartDocument> GetPartsFromAssembly(Inventor.Application inventorApp, string fileName)
@@ -342,19 +394,16 @@ public class PlywoodNesting
 
         GeneticNesting nesting = new GeneticNesting(inventorApp, properties);
         var bestSolution = nesting.ExecuteNesting(parts);
-        
+
         //if (bestSolution.Genes.Distinct().Count() != bestSolution.Genes.Count)
         //{
         //    throw new Exception("Duplicates detected in the genes.");
         //}
         List<PartDocument> sheets = new List<PartDocument>();
         List<List<(double x, double y, double width, double height)>> placementsForEachSheet = new List<List<(double, double, double, double)>>();
-
-        
+      
         foreach (var part in bestSolution.Genes)
-        {
-           
-        
+        {     
             Box partBox = part.ComponentDefinition.RangeBox;
             double partWidth = partBox.MaxPoint.X - partBox.MinPoint.X;
             double partHeight = partBox.MaxPoint.Y - partBox.MinPoint.Y;
@@ -525,33 +574,16 @@ public class PlywoodNesting
     private void SubtractDerivedFromSheet(Inventor.Application inventorApp, PartDocument sheet)
     {
         sheet.SubType = "{4D29B490-49B2-11D0-93C3-7E0706000000}";
-
-
-
         SurfaceBodies oBodies = sheet.ComponentDefinition.SurfaceBodies;
-
-
-
         // Assuming the first body is always the sheet and subsequent bodies are the derived parts.
         SurfaceBody mainBody = oBodies[1];
-
-
-
         for (int i = 2; i <= oBodies.Count; i++) // Starting from 2 because 1 is the main sheet body.
         {
             SurfaceBody derivedBody = oBodies[i];
-
-
-
             ObjectCollection objCollection = inventorApp.TransientObjects.CreateObjectCollection();
             objCollection.Add(derivedBody);
 
-
-
             sheet.ComponentDefinition.Features.CombineFeatures.Add(mainBody, objCollection, PartFeatureOperationEnum.kCutOperation);
-
-
-
         }
         sheet.SubType = "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}";
     }

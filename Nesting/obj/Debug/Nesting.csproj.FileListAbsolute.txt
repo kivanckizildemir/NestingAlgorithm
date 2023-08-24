@@ -25,3 +25,6 @@ C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.Gene
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.CoreCompileInputs.cache
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.exe
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.pdb
+C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.dll
+C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.xml
+C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.CopyComplete

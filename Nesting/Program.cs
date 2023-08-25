@@ -8,16 +8,14 @@ using netDxf.Header;
 using System.Linq;
 using System.IO;
 using netDxf;
-
-
-
+using System.Threading;
 
 public class CNCRouterProperties
 {
     public double ToolDiameter { get; set; }
     public double SheetWidth { get; set; }
     public double SheetHeight { get; set; }
-    public double OffsetFromBoundary { get; set; } = 5;  // default value set to 1
+    public double OffsetFromBoundary { get; set; } = 1;  // default value set to 1
 }
 
 public class Chromosome
@@ -28,16 +26,18 @@ public class Chromosome
 }
 public class GeneticNesting
 {
+    private static ThreadLocal<Random> threadLocalRand = new ThreadLocal<Random>(() => new Random()); //To make each thread access its own random instance
     private const int PopulationSize = 100;
     private const int Generations = 100;
     private const double MutationRate = 0.05;
     private const int ElitismCount = 1;
     private CNCRouterProperties RouterProperties;
-    private Random rand = new Random();
+    //private Random rand = new Random();
     public GeneticNesting(CNCRouterProperties routerProperties)
     {
         RouterProperties = routerProperties;
     }
+
     private static (Vector3 Min, Vector3 Max) GetBounds(DxfDocument doc)
     {
         if (doc == null)
@@ -61,7 +61,6 @@ public class GeneticNesting
             maxY = Math.Max(maxY, point.Y);
             maxZ = Math.Max(maxZ, point.Z);
         }
-
         return (new Vector3(minX, minY, minZ), new Vector3(maxX, maxY, maxZ));
     }
     private double CalculateFitness(Chromosome chromosome)
@@ -73,7 +72,6 @@ public class GeneticNesting
         {
             var dxfDoc = chromosome.Genes[geneIndex];
 
-            // Use the GetBounds method you provided to get the bounding box of the DXF document.
             var bounds = GetBounds(dxfDoc);
 
             double width, height;
@@ -101,8 +99,8 @@ public class GeneticNesting
     {
         Chromosome child = new Chromosome();
 
-        int crossoverStart = rand.Next(parent1.Genes.Count);
-        int crossoverEnd = crossoverStart + rand.Next(parent1.Genes.Count - crossoverStart);
+        int crossoverStart = threadLocalRand.Value.Next(parent1.Genes.Count);
+        int crossoverEnd = crossoverStart + threadLocalRand.Value.Next(parent1.Genes.Count - crossoverStart);
 
         // Copying genes from parent1 to child
         for (int i = crossoverStart; i < crossoverEnd; i++)
@@ -135,14 +133,13 @@ public class GeneticNesting
                     childCounts[geneKey]++;
             }
         }
-
         return child;
     }
     private void Mutate(Chromosome chromosome)
     {
         for (int i = 0; i < chromosome.Rotations.Count; i++)
         {
-            if (rand.NextDouble() < MutationRate)
+            if (threadLocalRand.Value.NextDouble() < MutationRate)
             {
                 chromosome.Rotations[i] = !chromosome.Rotations[i];
             }
@@ -152,7 +149,7 @@ public class GeneticNesting
     private Chromosome SelectParent(List<Chromosome> population)
     {
         double totalFitness = population.Sum(chromosome => chromosome.Fitness);
-        double randomValue = rand.NextDouble() * totalFitness;
+        double randomValue = threadLocalRand.Value.NextDouble() * totalFitness;
         double currentSum = 0;
         foreach (var chromosome in population)
         {
@@ -166,49 +163,31 @@ public class GeneticNesting
     }
     private void ParallelCalculateFitness(ConcurrentBag<Chromosome> population)
     {
-        //Parallel.ForEach(population, chromosome =>
-        //{
-        //    chromosome.Fitness = CalculateFitness(chromosome);
-        //});
-        foreach (Chromosome chromosome in population)
+        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+        Parallel.ForEach(population, options ,chromosome =>
         {
             chromosome.Fitness = CalculateFitness(chromosome);
-        }
+        });  
     }
     public Chromosome ExecuteNesting(List<DxfDocument> allParts)
     {
         Console.WriteLine("Starting nesting...");
 
         ConcurrentBag<Chromosome> population = new ConcurrentBag<Chromosome>();
-
-        //Parallel.For(0, PopulationSize, i =>
-        //{
-        //    Chromosome chromosome = new Chromosome();
-        //    foreach (DxfDocument partDoc in allParts)
-        //    {
-        //        // Assuming there's a way to determine if a DxfDocument represents a sheet metal part.
-        //        // If there isn't, you might need additional logic or information to filter the parts.
-        //        chromosome.Genes.Add(partDoc);
-        //        chromosome.Rotations.Add(rand.Next(2) == 0);  // Randomly assign rotation status.
-        //    }
-        //    chromosome.Genes = chromosome.Genes.OrderBy(x => rand.Next()).ToList();
-        //    chromosome.Fitness = CalculateFitness(chromosome);
-        //    population.Add(chromosome);
-        //});
-        for (int i = 0; i < PopulationSize; i++)
+        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+        Parallel.For(0, PopulationSize,options, i =>
         {
             Chromosome chromosome = new Chromosome();
             foreach (DxfDocument partDoc in allParts)
             {
-                // Assuming there's a way to determine if a DxfDocument represents a sheet metal part.
-                // If there isn't, you might need additional logic or information to filter the parts.
                 chromosome.Genes.Add(partDoc);
-                chromosome.Rotations.Add(rand.Next(2) == 0);  // Randomly assign rotation status.
+                chromosome.Rotations.Add(threadLocalRand.Value.Next(2) == 0);  // Randomly assign rotation status.
             }
-            chromosome.Genes = chromosome.Genes.OrderBy(x => rand.Next()).ToList();
+            chromosome.Genes = chromosome.Genes.OrderBy(x => threadLocalRand.Value.Next()).ToList();
             chromosome.Fitness = CalculateFitness(chromosome);
             population.Add(chromosome);
-        }
+        });
+
         ParallelCalculateFitness(population);
         for (int generation = 0; generation < Generations; generation++)
         {
@@ -221,20 +200,8 @@ public class GeneticNesting
             {
                 newPopulation.Add(sortedPopulation[i]);
             }
-            //Parallel.For(0, PopulationSize - ElitismCount, i =>  // Adjusted for elitism
-            //{
-            //    Chromosome parent1 = SelectParent(sortedPopulation);
-            //    Chromosome parent2 = SelectParent(sortedPopulation);
-            //    while (parent1 == parent2)
-            //        parent2 = SelectParent(sortedPopulation);
 
-            //    Chromosome child = Crossover(parent1, parent2);
-            //    Mutate(child);
-
-            //    child.Fitness = CalculateFitness(child);
-            //    newPopulation.Add(child);
-            //});
-            for (int i = 0; i < PopulationSize - ElitismCount; i++)  // Adjusted for elitism
+            Parallel.For(0, PopulationSize - ElitismCount,options, i =>  // Adjusted for elitism
             {
                 Chromosome parent1 = SelectParent(sortedPopulation);
                 Chromosome parent2 = SelectParent(sortedPopulation);
@@ -246,7 +213,8 @@ public class GeneticNesting
 
                 child.Fitness = CalculateFitness(child);
                 newPopulation.Add(child);
-            }
+            });
+         
 
             population = newPopulation;
         }
@@ -264,9 +232,8 @@ public class PlywoodNesting
         List<string> baseDirectories = new List<string>
     {
         @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1_2\Outputs",
-        @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1\Outputs",       
+        //@"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1\Outputs",       
     };
-
         // Store files by material
         Dictionary<string, List<string>> filesByMaterial = new Dictionary<string, List<string>>();
 
@@ -276,7 +243,7 @@ public class PlywoodNesting
             string[] subdirectories = Directory.GetDirectories(baseDirectory);
             foreach (var subdir in subdirectories)
             {
-                string materialName = System.IO.Path.GetFileName(subdir);  // Extracting the subdirectory name
+                string materialName = Path.GetFileName(subdir);  // Extracting subdirectory name
                 if (!filesByMaterial.ContainsKey(materialName))
                 {
                     filesByMaterial[materialName] = new List<string>();
@@ -293,8 +260,8 @@ public class PlywoodNesting
             foreach (string file in filesByMaterial[material])
             {
                 DxfDocument document = DxfDocument.Load(file);
-                string fileName = System.IO.Path.GetFileNameWithoutExtension(file);
-                string userInput = Interaction.InputBox($"Enter the multiplier for DXF '{fileName}':", "DXF Multiplier", "1");
+                string fileName = Path.GetFileNameWithoutExtension(file);
+                string userInput = Interaction.InputBox($"Enter the multiplier for '{fileName}':", "Multiplier", "1");
 
                 if (int.TryParse(userInput, out int multiplier))
                 {
@@ -308,14 +275,13 @@ public class PlywoodNesting
                     dxfDocuments.Add(document);
                 }
             }
-
             // Reset the sheets for each material
             sheets = new List<DxfDocument>();
             ProcessPartsForNesting(dxfDocuments, material, outputDir);
         }
     }
 
-    //Get bounds of parts
+    //Get dimensions of the parts
     private static (Vector3 Min, Vector3 Max) GetBounds(DxfDocument doc)
     {
         if (doc == null)
@@ -352,17 +318,17 @@ public class PlywoodNesting
         rect.Vertexes.Add(new Polyline2DVertex(0, height));
         rect.IsClosed = true; // Close the polyline to complete the rectangle
 
-        // Optionally set a width if you want the rectangle to have a "thickness"
-        //rect.SetConstantWidth(1); // Adjust as needed
+        //rect.SetConstantWidth(1); //thickness of sheet border
 
         return rect;
 
     }
+    
     private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName, string outputDirectory)
     {
         CNCRouterProperties properties = new CNCRouterProperties
         {
-            ToolDiameter = 1, //Does not work
+            ToolDiameter = 1, //Does not work. it takes offsetvalue from OffsetFromBoundary property
             SheetWidth = 2000,
             SheetHeight = 2000
         };
@@ -398,7 +364,7 @@ public class PlywoodNesting
                     partPlaced = true;
                     break;
                 }
-            }
+            } 
 
             if (!partPlaced)
             {
@@ -448,7 +414,7 @@ public class PlywoodNesting
                 return placedPart;
             }
         }
-        return null;  // No conflict found
+        return null; // No conflict found
     }
 
     private DxfDocument CreateNewSheet(double width, double height)
@@ -474,16 +440,12 @@ public class PlywoodNesting
                 // Rotate the entity 90 degrees around the Z-axis at the specified midpoint
                 clonedEntity.TransformBy(Matrix3.RotationZ(Math.PI / 2), midpoint);
             }
-
-            // Create the moveVector for the midpoint.
             Vector3 moveVector = new Vector3(midPosX, midPosY, 0);
-            // Translate the entity to the midpoint.
             clonedEntity.TransformBy(Matrix3.Identity, moveVector);
 
             clonedEntities.Add(clonedEntity);
         }
-
-        // Add the cloned entities to the main DXF
+        // Add the cloned entities to the main DXF 
         foreach (var entity in clonedEntities)
         {
             mainDxf.Entities.Add(entity);
@@ -492,7 +454,6 @@ public class PlywoodNesting
 }
 public class Program
 {
-    [STAThread]
     static void Main(string[] args)
     {
         Console.WriteLine("Program started...");

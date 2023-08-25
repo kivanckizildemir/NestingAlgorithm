@@ -81,6 +81,7 @@ public class GeneticNesting
             if (chromosome.Rotations[geneIndex])
             {
                 // If rotated
+                //Console.WriteLine("Rotated");
                 width = bounds.Max.Y - bounds.Min.Y;
                 height = bounds.Max.X - bounds.Min.X;
             }
@@ -147,6 +148,7 @@ public class GeneticNesting
             }
         }
     }
+  
     private Chromosome SelectParent(List<Chromosome> population)
     {
         double totalFitness = population.Sum(chromosome => chromosome.Fitness);
@@ -257,6 +259,7 @@ public class PlywoodNesting
     private List<DxfDocument> sheets = new List<DxfDocument>();
     public void NestParts()
     {
+        string outputDir = (@"C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\DXFOuts");
         // Select directories
         List<string> baseDirectories = new List<string>
     {
@@ -282,7 +285,7 @@ public class PlywoodNesting
                 filesByMaterial[materialName].AddRange(Directory.GetFiles(subdir, "*.dxf"));
             }
         }
-
+        
         // Process each material group
         foreach (var material in filesByMaterial.Keys)
         {
@@ -308,7 +311,7 @@ public class PlywoodNesting
 
             // Reset the sheets for each material
             sheets = new List<DxfDocument>();
-            ProcessPartsForNesting(dxfDocuments, material);
+            ProcessPartsForNesting(dxfDocuments, material, outputDir);
         }
     }
 
@@ -353,12 +356,13 @@ public class PlywoodNesting
         //rect.SetConstantWidth(1); // Adjust as needed
 
         return rect;
+
     }
-    private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName)
+    private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName, string outputDirectory)
     {
         CNCRouterProperties properties = new CNCRouterProperties
         {
-            ToolDiameter = 1,
+            ToolDiameter = 1, //Does not work
             SheetWidth = 2000,
             SheetHeight = 2000
         };
@@ -413,7 +417,7 @@ public class PlywoodNesting
         int sheetNumber = 1;
         foreach (DxfDocument sheet in sheets)
         {
-            sheet.Save($"{subdirName}_{sheetNumber}.dxf");
+            sheet.Save(Path.Combine(outputDirectory, $"{subdirName}_{sheetNumber}.dxf"));
             sheetNumber++;
         }
     }

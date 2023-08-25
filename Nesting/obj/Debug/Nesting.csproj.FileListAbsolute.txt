@@ -28,3 +28,15 @@ C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.pdb
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.dll
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.xml
 C:\Users\pc\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.CopyComplete
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\Nesting.exe.config
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\Nesting.exe
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\Nesting.pdb
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.dll
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\bin\Debug\netDxf.xml
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.AssemblyReference.cache
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.Properties.Resources.resources
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.GenerateResource.cache
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.CoreCompileInputs.cache
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.csproj.CopyComplete
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.exe
+C:\Users\nesen\Source\Repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.pdb

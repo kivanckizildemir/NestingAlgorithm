@@ -1,18 +1,15 @@
-﻿using Inventor;
-using System;
+﻿using System;
+using Microsoft.VisualBasic;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using Microsoft.VisualBasic;
-using System.Text;
-using System.IO;
-using netDxf;
 using netDxf.Entities;
 using netDxf.Header;
+using System.Linq;
+using System.IO;
+using netDxf;
+
+
 
 
 public class CNCRouterProperties
@@ -20,7 +17,7 @@ public class CNCRouterProperties
     public double ToolDiameter { get; set; }
     public double SheetWidth { get; set; }
     public double SheetHeight { get; set; }
-    public double OffsetFromBoundary { get; set; } = 1;  // default value set to 1
+    public double OffsetFromBoundary { get; set; } = 5;  // default value set to 1
 }
 
 public class Chromosome
@@ -29,23 +26,18 @@ public class Chromosome
     public List<bool> Rotations { get; set; } = new List<bool>();
     public double Fitness { get; set; }
 }
-
 public class GeneticNesting
 {
-    private const int PopulationSize = 20;
-    private const int Generations = 20;
+    private const int PopulationSize = 100;
+    private const int Generations = 100;
     private const double MutationRate = 0.05;
     private const int ElitismCount = 1;
-    private Inventor.Application InventorApplication;
     private CNCRouterProperties RouterProperties;
     private Random rand = new Random();
-
-
     public GeneticNesting(CNCRouterProperties routerProperties)
     {
         RouterProperties = routerProperties;
     }
-
     private static (Vector3 Min, Vector3 Max) GetBounds(DxfDocument doc)
     {
         if (doc == null)
@@ -72,7 +64,6 @@ public class GeneticNesting
 
         return (new Vector3(minX, minY, minZ), new Vector3(maxX, maxY, maxZ));
     }
-
     private double CalculateFitness(Chromosome chromosome)
     {
         double wastedSpace = 0;
@@ -105,8 +96,6 @@ public class GeneticNesting
         }
         return 1 / wastedSpace;
     }
-
-
     private Chromosome Crossover(Chromosome parent1, Chromosome parent2)
     {
         Chromosome child = new Chromosome();
@@ -148,8 +137,6 @@ public class GeneticNesting
 
         return child;
     }
-
-
     private void Mutate(Chromosome chromosome)
     {
         for (int i = 0; i < chromosome.Rotations.Count; i++)
@@ -173,17 +160,18 @@ public class GeneticNesting
                 return chromosome;
             }
         }
-
         return population.Last();
     }
-
-
     private void ParallelCalculateFitness(ConcurrentBag<Chromosome> population)
     {
-        Parallel.ForEach(population, chromosome =>
+        //Parallel.ForEach(population, chromosome =>
+        //{
+        //    chromosome.Fitness = CalculateFitness(chromosome);
+        //});
+        foreach (Chromosome chromosome in population)
         {
             chromosome.Fitness = CalculateFitness(chromosome);
-        });
+        }
     }
     public Chromosome ExecuteNesting(List<DxfDocument> allParts)
     {
@@ -191,7 +179,21 @@ public class GeneticNesting
 
         ConcurrentBag<Chromosome> population = new ConcurrentBag<Chromosome>();
 
-        Parallel.For(0, PopulationSize, i =>
+        //Parallel.For(0, PopulationSize, i =>
+        //{
+        //    Chromosome chromosome = new Chromosome();
+        //    foreach (DxfDocument partDoc in allParts)
+        //    {
+        //        // Assuming there's a way to determine if a DxfDocument represents a sheet metal part.
+        //        // If there isn't, you might need additional logic or information to filter the parts.
+        //        chromosome.Genes.Add(partDoc);
+        //        chromosome.Rotations.Add(rand.Next(2) == 0);  // Randomly assign rotation status.
+        //    }
+        //    chromosome.Genes = chromosome.Genes.OrderBy(x => rand.Next()).ToList();
+        //    chromosome.Fitness = CalculateFitness(chromosome);
+        //    population.Add(chromosome);
+        //});
+        for (int i = 0; i < PopulationSize; i++)
         {
             Chromosome chromosome = new Chromosome();
             foreach (DxfDocument partDoc in allParts)
@@ -204,10 +206,8 @@ public class GeneticNesting
             chromosome.Genes = chromosome.Genes.OrderBy(x => rand.Next()).ToList();
             chromosome.Fitness = CalculateFitness(chromosome);
             population.Add(chromosome);
-        });
-
+        }
         ParallelCalculateFitness(population);
-
         for (int generation = 0; generation < Generations; generation++)
         {
             Console.WriteLine($"Processing generation {generation + 1} of {Generations}...");
@@ -219,8 +219,20 @@ public class GeneticNesting
             {
                 newPopulation.Add(sortedPopulation[i]);
             }
+            //Parallel.For(0, PopulationSize - ElitismCount, i =>  // Adjusted for elitism
+            //{
+            //    Chromosome parent1 = SelectParent(sortedPopulation);
+            //    Chromosome parent2 = SelectParent(sortedPopulation);
+            //    while (parent1 == parent2)
+            //        parent2 = SelectParent(sortedPopulation);
 
-            Parallel.For(0, PopulationSize - ElitismCount, i =>  // Adjusted for elitism
+            //    Chromosome child = Crossover(parent1, parent2);
+            //    Mutate(child);
+
+            //    child.Fitness = CalculateFitness(child);
+            //    newPopulation.Add(child);
+            //});
+            for (int i = 0; i < PopulationSize - ElitismCount; i++)  // Adjusted for elitism
             {
                 Chromosome parent1 = SelectParent(sortedPopulation);
                 Chromosome parent2 = SelectParent(sortedPopulation);
@@ -232,45 +244,75 @@ public class GeneticNesting
 
                 child.Fitness = CalculateFitness(child);
                 newPopulation.Add(child);
-            });
+            }
 
             population = newPopulation;
         }
-
         Console.WriteLine("Nesting complete!");
         return population.OrderByDescending(c => c.Fitness).FirstOrDefault();
     }
-
 }
-
 public class PlywoodNesting
 {
-    private List<PartDocument> sheets = new List<PartDocument>();
+    private List<DxfDocument> sheets = new List<DxfDocument>();
     public void NestParts()
     {
-        // Initialize a new DXF document
-        DxfDocument mainDxf = new DxfDocument(DxfVersion.AutoCad2013);
+        // Select directories
+        List<string> baseDirectories = new List<string>
+    {
+        @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1_2\Outputs",
+        @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1\Outputs",       
+    };
 
-        // Define the sheet's width and height
-        double sheetWidth = 2000; // Adjust as necessary
-        double sheetHeight = 1000; // Adjust as necessary
+        // Store files by material
+        Dictionary<string, List<string>> filesByMaterial = new Dictionary<string, List<string>>();
 
-        // Create a rectangle for the sheet boundary using Polyline2D
-        Polyline2D sheetBoundary = CreateRectanglePolyline(sheetWidth, sheetHeight);
-        mainDxf.Entities.Add(sheetBoundary);
-
-        // Path to the directory containing DXF files to import
-        string dxfDirectory = (@"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\case1only1\Outputs\M847111");
-        string[] dxfFiles = Directory.GetFiles(dxfDirectory, "*.dxf");
-        List<DxfDocument> dxfDocuments = new List<DxfDocument>();
-        foreach (string file in dxfFiles)
+        // Get all DXF files from all directories
+        foreach (var baseDirectory in baseDirectories)
         {
-            dxfDocuments.Add(DxfDocument.Load(file));
+            string[] subdirectories = Directory.GetDirectories(baseDirectory);
+            foreach (var subdir in subdirectories)
+            {
+                string materialName = System.IO.Path.GetFileName(subdir);  // Extracting the subdirectory name
+                if (!filesByMaterial.ContainsKey(materialName))
+                {
+                    filesByMaterial[materialName] = new List<string>();
+                }
+
+                filesByMaterial[materialName].AddRange(Directory.GetFiles(subdir, "*.dxf"));
+            }
         }
 
-        ProcessPartsForNesting(dxfDocuments, mainDxf);
+        // Process each material group
+        foreach (var material in filesByMaterial.Keys)
+        {
+            List<DxfDocument> dxfDocuments = new List<DxfDocument>();
+            foreach (string file in filesByMaterial[material])
+            {
+                DxfDocument document = DxfDocument.Load(file);
+                string fileName = System.IO.Path.GetFileNameWithoutExtension(file);
+                string userInput = Interaction.InputBox($"Enter the multiplier for DXF '{fileName}':", "DXF Multiplier", "1");
 
+                if (int.TryParse(userInput, out int multiplier))
+                {
+                    for (int i = 0; i < multiplier; i++)
+                    {
+                        dxfDocuments.Add(document);
+                    }
+                }
+                else
+                {
+                    dxfDocuments.Add(document);
+                }
+            }
+
+            // Reset the sheets for each material
+            sheets = new List<DxfDocument>();
+            ProcessPartsForNesting(dxfDocuments, material);
+        }
     }
+
+    //Get bounds of parts
     private static (Vector3 Min, Vector3 Max) GetBounds(DxfDocument doc)
     {
         if (doc == null)
@@ -297,6 +339,7 @@ public class PlywoodNesting
 
         return (new Vector3(minX, minY, minZ), new Vector3(maxX, maxY, maxZ));
     }
+    //Draw the sheet
     private static Polyline2D CreateRectanglePolyline(double width, double height)
     {
         Polyline2D rect = new Polyline2D();
@@ -311,72 +354,27 @@ public class PlywoodNesting
 
         return rect;
     }
-    
-    private List<PartDocument> GetPartsFromAssembly(Inventor.Application inventorApp, string fileName)
-    {
-        string file = fileName;
-        file = file.Replace(".iam", "");
-        string filePath = @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\" + file + @"\Model Files\" + file + ".iam";
-
-
-        inventorApp.Documents.CloseAll();
-        string ipjPath = @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\" + file + @"\Model Files\Model2.ipj";
-        try
-        {
-            inventorApp.Documents.CloseAll();
-            inventorApp.DesignProjectManager.DesignProjects.AddExisting(ipjPath);
-            DesignProject designProject = inventorApp.DesignProjectManager.DesignProjects.ItemByName[ipjPath];
-            designProject.Activate();
-        }
-        catch { }
-
-        AssemblyDocument asmDoc = inventorApp.Documents.Open(filePath, true) as AssemblyDocument;
-
-        if (asmDoc == null)
-        {
-            throw new Exception($"Failed to open assembly document: {filePath}");
-        }
-        AssemblyComponentDefinition assemblyDef = asmDoc.ComponentDefinition;
-        ComponentOccurrences occurrences = assemblyDef.Occurrences;
-
-        List<PartDocument> parts = new List<PartDocument>();
-
-
-
-        foreach (ComponentOccurrence occurrence in occurrences)
-        {
-            if (occurrence.DefinitionDocumentType == DocumentTypeEnum.kPartDocumentObject)
-            {
-                PartDocument partDoc = occurrence.Definition.Document as PartDocument;
-                if (partDoc.SubType == "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}")  // Sheet metal parts.
-                {
-                    parts.Add(partDoc);
-                }
-            }
-        }
-
-
-
-        return parts;
-    }
-   
- private void ProcessPartsForNesting(List<DxfDocument> dxfParts,  DxfDocument mainDxf)
+    private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName)
     {
         CNCRouterProperties properties = new CNCRouterProperties
         {
             ToolDiameter = 1,
             SheetWidth = 2000,
-            SheetHeight = 1000
+            SheetHeight = 2000
         };
+
+        // Initialize the main sheet for the current directory
+        DxfDocument mainDxf = new DxfDocument(DxfVersion.AutoCad2013);
+        Polyline2D sheetBoundary = CreateRectanglePolyline(properties.SheetWidth, properties.SheetHeight);
+        mainDxf.Entities.Add(sheetBoundary);
+        sheets.Add(mainDxf);
 
         GeneticNesting nesting = new GeneticNesting(properties);
         var bestSolution = nesting.ExecuteNesting(dxfParts);
 
-        List<DxfDocument> sheets = new List<DxfDocument> { mainDxf };
-
         Dictionary<DxfDocument, List<(double x, double y, double width, double height)>> placedPartsBySheet = new Dictionary<DxfDocument, List<(double, double, double, double)>> { { mainDxf, new List<(double, double, double, double)>() } };
 
-        var orderedParts = bestSolution.Genes.ToList(); 
+        var orderedParts = bestSolution.Genes.ToList();
 
         foreach (var part in orderedParts)
         {
@@ -392,7 +390,7 @@ public class PlywoodNesting
                 if (position.HasValue)
                 {
                     placedPartsBySheet[sheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
-                    PlacePartOnSheet(sheet, part, position.Value.x, position.Value.y,false);
+                    PlacePartOnSheet(sheet, part, position.Value.x, position.Value.y, false);
                     partPlaced = true;
                     break;
                 }
@@ -407,18 +405,19 @@ public class PlywoodNesting
                 if (position.HasValue)
                 {
                     placedPartsBySheet[newSheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
-                    PlacePartOnSheet(newSheet, part, position.Value.x, position.Value.y,false);
+                    PlacePartOnSheet(newSheet, part, position.Value.x, position.Value.y, false);
                 }
             }
         }
-        //mainDxf = sheets[0];  // Assuming you want to keep reference to the first sheet for further operations.
+
         int sheetNumber = 1;
         foreach (DxfDocument sheet in sheets)
         {
-            sheet.Save($"result{sheetNumber}.dxf");
+            sheet.Save($"{subdirName}_{sheetNumber}.dxf");
             sheetNumber++;
         }
     }
+
     private (double x, double y)? FindBestPositionForPart(double partWidth, double partHeight, double sheetWidth, double sheetHeight, List<(double x, double y, double width, double height)> placedParts, double offsetFromBoundary)
     {
         double currentY = offsetFromBoundary;
@@ -467,6 +466,7 @@ public class PlywoodNesting
 
             if (rotZ)
             {
+                Console.WriteLine("Rotated");
                 // Rotate the entity 90 degrees around the Z-axis at the specified midpoint
                 clonedEntity.TransformBy(Matrix3.RotationZ(Math.PI / 2), midpoint);
             }
@@ -486,7 +486,6 @@ public class PlywoodNesting
         }
     }
 }
-
 public class Program
 {
     [STAThread]

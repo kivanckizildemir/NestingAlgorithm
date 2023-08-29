@@ -1,7 +1,8 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\Nesting"
   ],
-  "SelectedNode": "\\Nesting.sln",
+  "SelectedNode": "\\Nesting\\Program.cs",
   "PreviewInSolutionExplorer": false
 }

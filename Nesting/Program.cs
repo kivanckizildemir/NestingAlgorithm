@@ -11,8 +11,6 @@ using netDxf;
 using System.Threading;
 using System.Windows.Forms;
 
-
-
 public class CNCRouterProperties
 {
     public double ToolDiameter { get; set; }
@@ -173,9 +171,6 @@ public class GeneticNesting
             }
         }
     }
-
-
-
     private Chromosome SelectParent(List<Chromosome> population)
     {
         double totalFitness = population.Sum(chromosome => chromosome.Fitness);
@@ -268,13 +263,17 @@ public class PlywoodNesting
     private List<DxfDocument> sheets = new List<DxfDocument>();
     public void NestParts()
     {
-        string outputDir = (@"C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\DXFOuts");
+
+        string outputDir = (Path.Combine(System.Environment.CurrentDirectory, @"DXFOuts"));
+        Console.WriteLine(System.Environment.CurrentDirectory);
+
         // Select directories
         List<string> baseDirectories = new List<string>
     {
-            //@"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1_2\Outputs",
-            //@"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\testcase1\Outputs",
-        @"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\verticalCase2\Outputs" //vertical case test
+            Path.Combine(System.Environment.CurrentDirectory, @"multiple_materials"),
+            //Path.Combine(System.Environment.CurrentDirectory, @"one_material"),
+            //Path.Combine(System.Environment.CurrentDirectory, @"vertical_case")
+ 
     };
         // Store files by material
         Dictionary<string, List<string>> filesByMaterial = new Dictionary<string, List<string>>();
@@ -322,21 +321,19 @@ public class PlywoodNesting
             ProcessPartsForNesting(dxfDocuments, material, outputDir, sheetWidth, sheetHeight);
         }
     }
-
+    //This will be replaced with database operations code
     private (double Width, double Height) GetSheetDimensionsFromUser(string materialName)
     {
         double sheetWidth, sheetHeight;
         // Prompt for width
-        string widthInput = Interaction.InputBox($"Enter sheet width for material {materialName} (e.g. 2.44):", "Sheet Width");
+        string widthInput = Interaction.InputBox($"Enter sheet width (in meters) for material {materialName} (e.g. 2.44):", "Sheet Width");
         while (!double.TryParse(widthInput, out sheetWidth))
         {
             MessageBox.Show("Invalid input! Please enter a valid sheet width.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             widthInput = Interaction.InputBox($"Enter sheet width for material {materialName} (e.g. 2.44):", "Sheet Width");
-
         }
-
         // Prompt for height
-        string heightInput = Interaction.InputBox($"Enter sheet height for material {materialName} (e.g. 1.22):", "Sheet Height");
+        string heightInput = Interaction.InputBox($"Enter sheet height (in meters) for material {materialName} (e.g. 1.22):", "Sheet Height");
         while (!double.TryParse(heightInput, out sheetHeight))
         {
             MessageBox.Show("Invalid input! Please enter a valid sheet height.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -400,16 +397,16 @@ public class PlywoodNesting
     }
     private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName, string outputDirectory, double sheetWidth, double sheetHeight)
     {
-
+        //Specify offset from boundary and gaps between parts (TollDiameter) from here:
         CNCRouterProperties properties = new CNCRouterProperties
         {
             ToolDiameter = 1,
-            SheetWidth = sheetWidth ,
+            SheetWidth = sheetWidth,
             SheetHeight = sheetHeight,
             OffsetFromBoundary = 5
         };
 
-        
+
 
         Dictionary<DxfDocument, List<(double x, double y, double width, double height)>> placedPartsBySheet = new Dictionary<DxfDocument, List<(double, double, double, double)>>();
 
@@ -447,10 +444,7 @@ public class PlywoodNesting
             for (int i = 0; i < currentMaterialSheets.Count; i++)
             {
                 var sheet = currentMaterialSheets[i];
-
-
-
-                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[sheet], properties.ToolDiameter,properties.OffsetFromBoundary);
+                var position = FindBestPositionForPart(partWidth, partHeight, properties.SheetWidth, properties.SheetHeight, placedPartsBySheet[sheet], properties.ToolDiameter, properties.OffsetFromBoundary);
                 if (position.HasValue)
                 {
                     placedPartsBySheet[sheet].Add((position.Value.x, position.Value.y, partWidth, partHeight));
@@ -548,7 +542,7 @@ public class PlywoodNesting
             // Adjust the position based on the rotation and part's bounding box
             double offsetX = rotZ ? bounds.Max.X : bounds.Min.X;
             double offsetY = bounds.Min.Y;
-            Vector3 moveVector = new Vector3(midPosX - offsetX , midPosY - offsetY , 0);
+            Vector3 moveVector = new Vector3(midPosX - offsetX, midPosY - offsetY, 0);
             clonedEntity.TransformBy(Matrix3.Identity, moveVector);
             clonedEntities.Add(clonedEntity);
         }
@@ -569,5 +563,3 @@ public class Program
         Console.WriteLine("Program completed!");
     }
 }
-
-

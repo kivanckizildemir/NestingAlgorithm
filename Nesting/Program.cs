@@ -10,6 +10,9 @@ using System.IO;
 using netDxf;
 using System.Threading;
 using System.Windows.Forms;
+using System.Data.SQLite;
+
+
 
 public class CNCRouterProperties
 {
@@ -263,7 +266,6 @@ public class PlywoodNesting
     private List<DxfDocument> sheets = new List<DxfDocument>();
     public void NestParts()
     {
-
         string outputDir = (Path.Combine(System.Environment.CurrentDirectory, @"DXFOuts"));
         Console.WriteLine(System.Environment.CurrentDirectory);
 
@@ -271,6 +273,7 @@ public class PlywoodNesting
         List<string> baseDirectories = new List<string>
     {
             Path.Combine(System.Environment.CurrentDirectory, @"multiple_materials"),
+            //Path.Combine(System.Environment.CurrentDirectory, @"custom_material"),
             //Path.Combine(System.Environment.CurrentDirectory, @"one_material"),
             //Path.Combine(System.Environment.CurrentDirectory, @"vertical_case")
  
@@ -296,7 +299,7 @@ public class PlywoodNesting
         // Process each material group
         foreach (var material in filesByMaterial.Keys)
         {
-            var (sheetWidth, sheetHeight) = GetSheetDimensionsFromUser(material);
+            var (sheetWidth, sheetHeight) = GetSheetDimensionsFromDataBase(material);
             List<DxfDocument> dxfDocuments = new List<DxfDocument>();
             foreach (string file in filesByMaterial[material])
             {
@@ -321,34 +324,80 @@ public class PlywoodNesting
             ProcessPartsForNesting(dxfDocuments, material, outputDir, sheetWidth, sheetHeight);
         }
     }
+    
     //This will be replaced with database operations code
-    private (double Width, double Height) GetSheetDimensionsFromUser(string materialName)
+    private (double Width, double Height) GetSheetDimensionsFromDataBase(string materialName)
     {
-        double sheetWidth, sheetHeight;
-        // Prompt for width
-        string widthInput = Interaction.InputBox($"Enter sheet width (in meters) for material {materialName} (e.g. 2.44):", "Sheet Width");
-        while (!double.TryParse(widthInput, out sheetWidth))
+        //TO GET VALUES BY HAND
+        //double sheetWidth, sheetHeight;
+        //// Prompt for width
+        //string widthInput = Interaction.InputBox($"Enter sheet width (in meters) for material {materialName} (e.g. 2.44):", "Sheet Width");
+        //while (!double.TryParse(widthInput, out sheetWidth))
+        //{
+        //    MessageBox.Show("Invalid input! Please enter a valid sheet width.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        //    widthInput = Interaction.InputBox($"Enter sheet width for material {materialName} (e.g. 2.44):", "Sheet Width");
+        //}
+        //// Prompt for height
+        //string heightInput = Interaction.InputBox($"Enter sheet height (in meters) for material {materialName} (e.g. 1.22):", "Sheet Height");
+        //while (!double.TryParse(heightInput, out sheetHeight))
+        //{
+
+        //    MessageBox.Show("Invalid input! Please enter a valid sheet height.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        //    heightInput = Interaction.InputBox($"Enter sheet height for material {materialName} (e.g. 1.22):", "Sheet Height");
+        //}
+
+        ////To correct the numbers
+        //double factor = widthInput.Contains('.') ? 100 : 1000;
+        //sheetWidth *= factor;
+        //factor = heightInput.Contains('.') ? 100 : 1000;
+        //sheetHeight *= factor;
+        //Console.WriteLine(sheetWidth);
+        //Console.WriteLine(sheetHeight);
+        //return (sheetWidth, sheetHeight);
+
+        double sheetWidth = 0.0, sheetHeight = 0.0;
+        string connectionString = "Data Source= C:\\Users\\Public\\Documents\\AutoCase\\3D Case Design 2021\\Database\\AutoCase Database.db;Version=3;";
+
+        using (SQLiteConnection conn = new SQLiteConnection(connectionString))
         {
-            MessageBox.Show("Invalid input! Please enter a valid sheet width.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            widthInput = Interaction.InputBox($"Enter sheet width for material {materialName} (e.g. 2.44):", "Sheet Width");
-        }
-        // Prompt for height
-        string heightInput = Interaction.InputBox($"Enter sheet height (in meters) for material {materialName} (e.g. 1.22):", "Sheet Height");
-        while (!double.TryParse(heightInput, out sheetHeight))
-        {
-            MessageBox.Show("Invalid input! Please enter a valid sheet height.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            heightInput = Interaction.InputBox($"Enter sheet height for material {materialName} (e.g. 1.22):", "Sheet Height");
+            conn.Open();
+            string da = ("SELECT name FROM sqlite_schema WHERE name LIKE '%Panels'");
+            SQLiteCommand scmd = new SQLiteCommand(da, conn);
+            SQLiteDataReader dr = scmd.ExecuteReader();
+
+            while (dr.Read())
+            {
+                
+                string query = ("SELECT Width, Length FROM " + dr["name"].ToString() + " WHERE SKU = @SKU");
+                using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@SKU", materialName);
+
+                    using (SQLiteDataReader reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            sheetWidth = Convert.ToDouble(reader["Width"]);
+                            sheetHeight = Convert.ToDouble(reader["Length"]);
+                            break;  
+                        }
+                    }
+                }
+            }
         }
 
-        //To correct the numbers
-        double factor = widthInput.Contains('.') ? 100 : 1000;
+        if (sheetWidth == 0 && sheetHeight == 0)
+        {
+            Console.WriteLine("Material not found");
+            return (0, 0);
+        }
+
+        Console.WriteLine($"Retrieved dimensions from database: Width = {sheetWidth}, Height = {sheetHeight}");
+
+        double factor = 1000;
         sheetWidth *= factor;
-
-        factor = heightInput.Contains('.') ? 100 : 1000;
         sheetHeight *= factor;
 
-        Console.WriteLine(sheetWidth);
-        Console.WriteLine(sheetHeight);
         return (sheetWidth, sheetHeight);
     }
 
@@ -391,9 +440,6 @@ public class PlywoodNesting
         rect.IsClosed = true; // Close the polyline to complete the rectangle
         //rect.SetConstantWidth(1); //thickness of sheet border
         return rect;
-
-
-
     }
     private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName, string outputDirectory, double sheetWidth, double sheetHeight)
     {
@@ -466,8 +512,6 @@ public class PlywoodNesting
                 PlacePartOnSheet(newSheet, part, position.Value.x, position.Value.y, false);
             }
         }
-
-
 
         int sheetNumber = 1;
         foreach (DxfDocument sheet in currentMaterialSheets)

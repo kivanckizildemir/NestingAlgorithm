@@ -11,8 +11,15 @@ using netDxf;
 using System.Threading;
 using System.Windows.Forms;
 using System.Data.SQLite;
-
-
+using Inventor;
+using AutoCase;
+using System.Runtime.InteropServices;
+using DXFLayering;
+using InvAddIn;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
+using System.Xml.Linq;
+using Microsoft.VisualBasic.ApplicationServices;
+using System.Reflection;
 
 public class CNCRouterProperties
 {
@@ -30,8 +37,8 @@ public class Chromosome
 public class GeneticNesting
 {
     private static ThreadLocal<Random> threadLocalRand = new ThreadLocal<Random>(() => new Random()); //To make each thread access its own random instance
-    private const int PopulationSize = 100;
-    private const int Generations = 100;
+    private const int PopulationSize = 1000;
+    private const int Generations = 1000;
     private const double MutationRate = 0.05;
     private const int ElitismCount = 1;
     private CNCRouterProperties RouterProperties;
@@ -191,7 +198,7 @@ public class GeneticNesting
     }
     private void ParallelCalculateFitness(ConcurrentBag<Chromosome> population)
     {
-        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = System.Environment.ProcessorCount };
         Parallel.ForEach(population, options, chromosome =>
         {
             chromosome.Fitness = CalculateFitness(chromosome);
@@ -202,7 +209,7 @@ public class GeneticNesting
         Console.WriteLine("Starting nesting...");
 
         ConcurrentBag<Chromosome> population = new ConcurrentBag<Chromosome>();
-        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = System.Environment.ProcessorCount };
         Parallel.For(0, PopulationSize, options, i =>
         {
             Chromosome chromosome = new Chromosome();
@@ -264,50 +271,64 @@ public class GeneticNesting
 public class PlywoodNesting
 {
     private List<DxfDocument> sheets = new List<DxfDocument>();
-    public void NestParts()
-    {
-        string outputDir = (Path.Combine(System.Environment.CurrentDirectory, @"DXFOuts"));
-        Console.WriteLine(System.Environment.CurrentDirectory);
 
-        // Select directories
-        List<string> baseDirectories = new List<string>
+    public void NestParts(List<string> outputDirs)
     {
-            Path.Combine(System.Environment.CurrentDirectory, @"multiple_materials"),
-            //Path.Combine(System.Environment.CurrentDirectory, @"custom_material"),
-            //Path.Combine(System.Environment.CurrentDirectory, @"one_material"),
-            //Path.Combine(System.Environment.CurrentDirectory, @"vertical_case")
- 
-    };
-        // Store files by material
-        Dictionary<string, List<string>> filesByMaterial = new Dictionary<string, List<string>>();
+        string outputDir = System.IO.Path.Combine(System.Environment.CurrentDirectory, @"DXFOuts");
 
-        // Get all DXF files from all directories
-        foreach (var baseDirectory in baseDirectories)
+        // Step 1: Collect all DXF files into a global dictionary
+        Dictionary<string, List<string>> filesByMaterialGlobal = new Dictionary<string, List<string>>();
+
+        foreach (string dir in outputDirs)
         {
-            string[] subdirectories = Directory.GetDirectories(baseDirectory);
+            string trimmedDir = dir.Remove(dir.Length - 1, 1);
+            string[] subdirectories = System.IO.Directory.GetDirectories(trimmedDir);
+
             foreach (var subdir in subdirectories)
             {
-                string materialName = Path.GetFileName(subdir);  // Extracting subdirectory name
-                if (!filesByMaterial.ContainsKey(materialName))
+                string materialName = System.IO.Path.GetFileName(subdir);
+                if (!filesByMaterialGlobal.ContainsKey(materialName))
                 {
-                    filesByMaterial[materialName] = new List<string>();
+                    filesByMaterialGlobal[materialName] = new List<string>();
                 }
-                filesByMaterial[materialName].AddRange(Directory.GetFiles(subdir, "*.dxf"));
+                filesByMaterialGlobal[materialName].AddRange(System.IO.Directory.GetFiles(subdir, "*.dxf"));
             }
         }
 
-        // Process each material group
-        foreach (var material in filesByMaterial.Keys)
+        // Step 2: Ask for multipliers once, globally
+        Dictionary<string, int> multipliers = new Dictionary<string, int>();
+        Nesting.Form1 form1 = new Nesting.Form1();
+        form1.GenerateTextBoxes(filesByMaterialGlobal);
+        if (form1.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            foreach (var material in filesByMaterialGlobal.Keys)
+            {
+                foreach (var fileName in filesByMaterialGlobal[material])
+                {
+                    string fileNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(fileName);
+                    System.Windows.Forms.TextBox textBox = (System.Windows.Forms.TextBox)form1.scrollPanel.Controls.Find("txt_" + fileNameWithoutExtension, false).FirstOrDefault();
+                    if (textBox != null && int.TryParse(textBox.Text, out int multiplier))
+                    {
+                        multipliers[fileName] = multiplier;
+                    }
+                    else
+                    {
+                        multipliers[fileName] = 1;
+                    }
+                }
+            }
+        }
+
+        // Step 3: Process each material group
+        foreach (var material in filesByMaterialGlobal.Keys)
         {
             var (sheetWidth, sheetHeight) = GetSheetDimensionsFromDataBase(material);
             List<DxfDocument> dxfDocuments = new List<DxfDocument>();
-            foreach (string file in filesByMaterial[material])
+
+            foreach (string file in filesByMaterialGlobal[material])
             {
                 DxfDocument document = DxfDocument.Load(file);
-                string fileName = Path.GetFileNameWithoutExtension(file);
-                string userInput = Interaction.InputBox($"Enter the multiplier for '{fileName}':", "Multiplier", "1");
-
-                if (int.TryParse(userInput, out int multiplier))
+                if (multipliers.TryGetValue(file, out int multiplier))
                 {
                     for (int i = 0; i < multiplier; i++)
                     {
@@ -319,42 +340,18 @@ public class PlywoodNesting
                     dxfDocuments.Add(document);
                 }
             }
-            // Reset the sheets for each material
-            sheets = new List<DxfDocument>();
+            // Assuming sheets is a member variable
+            //sheets = new List<DxfDocument>();
             ProcessPartsForNesting(dxfDocuments, material, outputDir, sheetWidth, sheetHeight);
         }
     }
-    
+
+
+
     //This will be replaced with database operations code
     private (double Width, double Height) GetSheetDimensionsFromDataBase(string materialName)
     {
-        //TO GET VALUES BY HAND
-        //double sheetWidth, sheetHeight;
-        //// Prompt for width
-        //string widthInput = Interaction.InputBox($"Enter sheet width (in meters) for material {materialName} (e.g. 2.44):", "Sheet Width");
-        //while (!double.TryParse(widthInput, out sheetWidth))
-        //{
-        //    MessageBox.Show("Invalid input! Please enter a valid sheet width.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //    widthInput = Interaction.InputBox($"Enter sheet width for material {materialName} (e.g. 2.44):", "Sheet Width");
-        //}
-        //// Prompt for height
-        //string heightInput = Interaction.InputBox($"Enter sheet height (in meters) for material {materialName} (e.g. 1.22):", "Sheet Height");
-        //while (!double.TryParse(heightInput, out sheetHeight))
-        //{
-
-        //    MessageBox.Show("Invalid input! Please enter a valid sheet height.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //    heightInput = Interaction.InputBox($"Enter sheet height for material {materialName} (e.g. 1.22):", "Sheet Height");
-        //}
-
-        ////To correct the numbers
-        //double factor = widthInput.Contains('.') ? 100 : 1000;
-        //sheetWidth *= factor;
-        //factor = heightInput.Contains('.') ? 100 : 1000;
-        //sheetHeight *= factor;
-        //Console.WriteLine(sheetWidth);
-        //Console.WriteLine(sheetHeight);
-        //return (sheetWidth, sheetHeight);
-
+        
         double sheetWidth = 0.0, sheetHeight = 0.0;
         string connectionString = "Data Source= C:\\Users\\Public\\Documents\\AutoCase\\3D Case Design 2021\\Database\\AutoCase Database.db;Version=3;";
 
@@ -443,13 +440,14 @@ public class PlywoodNesting
     }
     private void ProcessPartsForNesting(List<DxfDocument> dxfParts, string subdirName, string outputDirectory, double sheetWidth, double sheetHeight)
     {
+        Nesting.Form1 form1 = new Nesting.Form1();
         //Specify offset from boundary and gaps between parts (TollDiameter) from here:
         CNCRouterProperties properties = new CNCRouterProperties
         {
-            ToolDiameter = 1,
+            ToolDiameter = 0,
             SheetWidth = sheetWidth,
             SheetHeight = sheetHeight,
-            OffsetFromBoundary = 5
+            OffsetFromBoundary = 0
         };
 
 
@@ -516,7 +514,7 @@ public class PlywoodNesting
         int sheetNumber = 1;
         foreach (DxfDocument sheet in currentMaterialSheets)
         {
-            sheet.Save(Path.Combine(outputDirectory, $"{subdirName}_{sheetNumber}.dxf"));
+            sheet.Save(System.IO.Path.Combine(outputDirectory, $"{subdirName}_{sheetNumber}.dxf"));
             sheetNumber++;
         }
     }
@@ -599,11 +597,137 @@ public class PlywoodNesting
 }
 public class Program
 {
+    static InvAddIn.Updates updates = new InvAddIn.Updates();
+    static DXFLayeringClass dxfLayering = new DXFLayeringClass();
+    static List<string> outputDirectories = new List<string>();
+
+    [STAThread]
     static void Main(string[] args)
     {
-        Console.WriteLine("Program started...");
+        StandardAddInServer.licenseCheck = true;
+        Inventor.Application invApp;
+
+        try
+        {
+            invApp = (Inventor.Application)Marshal.GetActiveObject("Inventor.Application");
+        }
+        catch
+        {
+            Type invAppType = Type.GetTypeFromProgID("Inventor.Application");
+            invApp = (Inventor.Application)Activator.CreateInstance(invAppType);
+            invApp.Visible = true;
+        }
+
+        List<string> selectedFiles = new List<string>();
+        using (OpenFileDialog openFileDialog = new OpenFileDialog())
+        {
+            openFileDialog.Filter = "Inventor Assembly files (*.iam)|*.iam";
+            openFileDialog.Multiselect = true;
+
+            DialogResult result;
+            do
+            {
+                result = openFileDialog.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    selectedFiles.AddRange(openFileDialog.FileNames);
+                    MessageBox.Show("Add more files or cancel to proceed with selected files.");
+                }
+            } while (result != DialogResult.Cancel);
+        }
+
+        foreach (string filePath in selectedFiles)
+        {
+            ProcessAssemblyFile(invApp, filePath);
+        }
+
         PlywoodNesting nesting = new PlywoodNesting();
-        nesting.NestParts();
-        Console.WriteLine("Program completed!");
+        nesting.NestParts(outputDirectories);
+        StandardAddInServer.licenseCheck = false;
+    }
+    static void ProcessAssemblyFile(Inventor.Application invApp, string filePath)
+    {
+        invApp.Documents.CloseAll();
+        string directoryPath = System.IO.Path.GetDirectoryName(filePath); // Get directory path
+
+        // Search for the .ipj file in the same directory as the .iam file
+        invApp.Documents.CloseAll();
+
+        // Extract the filename without extension from the full filePath
+        string fileNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(filePath);
+        MessageBox.Show(fileNameWithoutExtension);
+        // Construct the ipjPath dynamically based on the iam file's name
+        string ipjPath = $@"C:\Users\Public\Documents\AutoCase\3D Case Design 2021\Projects\{fileNameWithoutExtension}\Model Files\Model2.ipj";
+        try
+        {
+            invApp.DesignProjectManager.DesignProjects.AddExisting(ipjPath);
+            DesignProject designProject = invApp.DesignProjectManager.DesignProjects.ItemByName[ipjPath];
+            designProject.Activate();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"An error occurred while activating the design project: {e.Message}");
+        }
+        // Open the assembly document
+        AssemblyDocument assemblyDocument = (AssemblyDocument)invApp.Documents.Open(filePath, true);
+        //string directoryPath = System.IO.Path.GetDirectoryName(filePath);  // Get the directory path of the file
+        DirectoryInfo directory = new DirectoryInfo(directoryPath);  // Create DirectoryInfo object
+
+        try
+        {
+            foreach (DirectoryInfo dir in directory.GetDirectories())
+            {
+                dir.Delete(true);
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"An error occurred: {e.Message}");
+        }
+        //ObjectCollection castorBoardCollection = assemblyDocument.AttributeManager.FindObjects("Definition", "Type", "C");
+        ObjectCollection plywoodCollection = assemblyDocument.AttributeManager.FindObjects("Definition", "Type", "P");
+        ObjectCollection dividerCollection = assemblyDocument.AttributeManager.FindObjects("Definition", "Type", "Di");
+        ObjectCollection castorBoardCollection = assemblyDocument.AttributeManager.FindObjects("Definition", "Type", "C");
+        foreach (ComponentOccurrence component in castorBoardCollection)
+        {
+            string placementMethodValue = updates.GetPropertyValue(component.Definition.Document, "PlacementMethod");
+            if (placementMethodValue != "6" && placementMethodValue != "6")
+                castorBoardCollection.RemoveByObject(component);
+        }
+        ObjectCollection trayCollection = assemblyDocument.AttributeManager.FindObjects("TrayAssembly");
+        ObjectCollection drawerCollection = assemblyDocument.AttributeManager.FindObjects("DrawerAssembly");
+        ObjectCollection assemblyCollection = updates.MergeObjectCollections(invApp, trayCollection, drawerCollection);
+        ObjectCollection panelCollection = updates.MergeObjectCollections(invApp, plywoodCollection, dividerCollection, castorBoardCollection);
+        foreach (ComponentOccurrence trays in assemblyCollection)
+        {
+            if (trays.DefinitionDocumentType == DocumentTypeEnum.kAssemblyDocumentObject)
+                foreach (ComponentOccurrence trayComponent in trays.Definition.Occurrences)
+                    panelCollection.Add(trayComponent);
+        }
+
+        foreach (ComponentOccurrence componentOccurrence in panelCollection)
+        {
+            if (componentOccurrence.Definition.Document is PartDocument)
+            {
+                PartDocument partDocument = componentOccurrence.Definition.Document;
+
+                componentOccurrence.Edit();
+                dxfLayering.DXFLayering(invApp, assemblyDocument, componentOccurrence, partDocument.FullFileName);
+                try
+                {
+                    componentOccurrence.ExitEdit(ExitTypeEnum.kExitToTop);
+                }
+                catch { }
+            }
+        }
+        assemblyDocument.Activate();
+
+        string path1 = assemblyDocument.FullFileName;
+        path1 = path1.Replace("Model Files", "Outputs");
+        path1 = path1.Replace(assemblyDocument.DisplayName + ".iam", "");
+
+        outputDirectories.Add(path1);
+
+        assemblyDocument.Close();
     }
 }

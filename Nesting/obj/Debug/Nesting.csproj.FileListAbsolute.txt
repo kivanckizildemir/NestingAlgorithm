@@ -161,3 +161,4 @@ C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\System.Security.
 C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\AutoCase.exe.config
 C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\en-US\AdWindows.resources.dll
 C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\bin\Debug\PLUSManaged.XmlSerializers.dll
+C:\Users\nesen\source\repos\NestingAlgorithm1\Nesting\obj\Debug\Nesting.Form1.resources
